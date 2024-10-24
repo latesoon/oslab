@@ -34,9 +34,9 @@ buddy_init_memmap(struct Page *base, size_t n) {
         set_page_ref(p, 0);
     }
     // 初始化第一个块，并设置块大小
-    base->property = up_bound2(n)<<1;
+    base->property = up_bound2(n)>>1;
     //SetPageProperty(base);
-    nr_free += up_bound2(n)<<1;
+    nr_free += up_bound2(n)>>1;
     // 根据 buddy 系统划分块大小
     struct Page *block = base;
     list_add(&free_list, &(base->page_link)); 
