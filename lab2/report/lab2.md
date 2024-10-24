@@ -44,6 +44,90 @@
 
 #### 编程实现
 
+在best_fit_pmm.c中，进行以下补充。
+
+为解决重定义问题，需要将free_area声明为extern。
+
+```cpp {.line-numbers}
+extern free_area_t free_area;
+```
+
+best_fit_init_memmap函数(1)
+```cpp {.line-numbers}
+for (; p != base + n; p ++) {
+    assert(PageReserved(p));
+        
+    // 清空当前页框的标志和属性信息，并将页框的引用计数设置为0
+
+    p->property = 0; //清空属性信息
+    p->flags = 0;//清空标志
+    set_page_ref(p, 0);//引用计数设置为0
+}
+```
+在初始化函数的开始，需要清空页框的标志和属性信息，并且将页框的引用次数清零。
+
+best_fit_init_memmap函数(2)
+```cpp {.line-numbers}
+ while ((le = list_next(le)) != &free_list) {
+    struct Page* page = le2page(le, page_link);
+
+    // 编写代码
+    // 1、当base < page时，找到第一个大于base的页，将base插入到它前面，并退出循环
+    // 2、当list_next(le) == &free_list时，若已经到达链表结尾，将base插入到链表尾部
+    if (base < page) {
+        list_add_before(le, &(base->page_link));
+        break;
+    } 
+    else if (list_next(le) == &free_list) {
+        list_add(le, &(base->page_link));
+        }
+    }
+```
+free_list非空的分支，通过if语句找到第一个大于base的页，将base插入。或者当到链表结尾也没能找到，则插入链表尾部。
+
+best_fit_alloc_page函数
+```cpp {.line-numbers}
+// 下面的代码是first-fit的部分代码，请修改下面的代码改为best-fit
+// 遍历空闲链表，查找满足需求的空闲页框
+// 如果找到满足需求的页面，记录该页面以及当前找到的最小连续空闲页框数量
+while ((le = list_next(le)) != &free_list) {
+    struct Page *p = le2page(le, page_link);
+    if (p->property >= n && (page == NULL || p->property < page->property)) {
+        page = p;
+    }
+}
+```
+把first-fit逻辑替换为best-fit。while语句的含义是对链表的遍历。其中，若找到了一个大于base的页：
+若之前没有找到其他满足要求的页，则更新要分配的页为该页。
+否则，将其与之前找到的页相比较，分配更小的空闲页。
+
+best_fit_free_page函数(1)
+```cpp {.line-numbers}
+// 编写代码
+// 具体来说就是设置当前页块的属性为释放的页块数、并将当前页块标记为已分配状态、最后增加nr_free的值
+base->property = n; //设置页块属性
+SetPageProperty(base);
+nr_free = nr_free + n; //增加空闲页数量
+```
+定义了新page*变量base，在这一部分对base完成要释放的空闲页的赋值，并且更新空闲页数量。
+
+best_fit_free_page函数(2)
+```cpp {.line-numbers}
+// 编写代码
+// 1、判断前面的空闲页块是否与当前页块是连续的，如果是连续的，则将当前页块合并到前面的空闲页块中
+// 2、首先更新前一个空闲页块的大小，加上当前页块的大小
+// 3、清除当前页块的属性标记，表示不再是空闲页块
+// 4、从链表中删除当前页块
+// 5、将指针指向前一个空闲页块，以便继续检查合并后的连续空闲页块
+if (p + p->property == base) {
+    p->property = p->property + base->property;
+    ClearPageProperty(base);
+    list_del(&(base->page_link));
+    base = p;
+}
+```
+在空闲链表非空的情况下，判断前面的空闲页块是否与当前的空闲页块是连续的，若连续，则将两个空闲页块合并（即删除之前的并且更新base）。
+
 #### 测试结果
 
 通过make grade获取成绩。成功通过了所有check要求，得分30/30。
@@ -51,6 +135,9 @@
 ![](score.png)
 
 #### 改进空间
+
+1.  与first-fit算法相同，best-fit的同样容易产生碎片内存块，造成空间的浪费和利用率的下降。
+2.  当前best-fit算法需要遍历所有空闲块，才能完成一次分配。可以设置排序算法和二分算法，使用快慢指针，为不同大小空闲块使用不同链表管理等方式加快块的查找效率。
 
 ### Challenge1：buddy system（伙伴系统）分配算法
 
