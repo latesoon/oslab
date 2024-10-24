@@ -18,7 +18,7 @@
 #### First-Fit内存分配算法
 在物理内存管理中，first-fit算法是一种简单且有效的内存分配策略。它通过遍历空闲内存块，找到第一个满足请求大小的块并进行分配。下面将分别阐述`default_init`、`default_init_memmap`、`default_alloc_pages` 和 `default_free_pages’`函数的作用。
 
--default_init
+- default_init
 调用 `list_init(&free_list) `初始化空闲页面链表，并将可用页面计数 `nr_free `设为0。确保系统开始时没有可用的物理页面，实现了内存管理方法的初始化。
 
 - default_init_memmap
