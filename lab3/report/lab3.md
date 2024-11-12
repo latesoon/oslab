@@ -21,11 +21,121 @@ get_pte()函数中有两段形式类似的代码， 结合sv32，sv39，sv48的�
 如果ucore的缺页服务例程在执行过程中访问内存，出现了页访问异常，请问硬件要做哪些事情？
 数据结构Page的全局变量（其实是一个数组）的每一项与页表中的页目录项和页表项有无对应关系？如果有，其对应关系是啥？
 
+#### 编程实现及解释
+```cpp {.line-numbers}
+/*LAB3 EXERCISE 3: 2211290 2211312 2211320
+* 请你根据以下信息提示，补充函数
+* 现在我们认为pte是一个交换条目，那我们应该从磁盘加载数据并放到带有phy addr的页面，
+* 并将phy addr与逻辑addr映射，触发交换管理器记录该页面的访问情况
+*
+*  一些有用的宏和定义，可能会对你接下来代码的编写产生帮助(显然是有帮助的)
+*  宏或函数:
+*    swap_in(mm, addr, &page) : 分配一个内存页，然后根据
+*    PTE中的swap条目的addr，找到磁盘页的地址，将磁盘页的内容读入这个内存页
+*    page_insert ： 建立一个Page的phy addr与线性addr la的映射
+*    swap_map_swappable ： 设置页面可交换
+*/
+if (swap_init_ok) {
+    struct Page *page = NULL;
+    // 你要编写的内容在这里，请基于上文说明以及下文的英文注释完成代码编写
+    //(1）According to the mm AND addr, try
+    //to load the content of right disk page
+    //into the memory which page managed.
+    //(2) According to the mm,
+    //addr AND page, setup the
+    //map of phy addr <--->
+    //logical addr
+    //(3) make the page swappable.
+    swap_in(mm, addr, &page);
+    page_insert(mm->pgdir, page, addr, perm);
+    swap_map_swappable(mm, addr, page, 1);
+    page->pra_vaddr = addr;
+} 
+else {
+    cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
+    goto failed;
+}
+```
+
+#### 问题解答
+
 ### Exercise4：补充完成Clock页替换算法
 
 >通过之前的练习，相信大家对FIFO的页面替换算法有了更深入的了解，现在请在我们给出的框架上，填写代码，实现 Clock页替换算法（mm/swap_clock.c）。(提示:要输出curr_ptr的值才能通过make grade)
 请在实验报告中简要说明你的设计实现过程。请回答如下问题：
 比较Clock页替换算法和FIFO算法的不同。
+
+#### 编程实现及解释
+
+- _clock_init_mm函数 
+```cpp {.line-numbers}
+static int _clock_init_mm(struct mm_struct *mm)
+{    
+     // 初始化pra_list_head为空链表
+     // 初始化当前指针curr_ptr指向pra_list_head，表示当前页面替换位置为链表头
+     // 将mm的私有成员指针指向pra_list_head，用于后续的页面替换算法操作
+     list_init(&pra_list_head);
+     curr_ptr = &pra_list_head;
+     mm->sm_priv = &pra_list_head;
+     return 0;
+}
+```
+- _clock_map_swappable函数
+```cpp {.line-numbers}
+static int _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
+{
+    list_entry_t *entry=&(page->pra_page_link);
+ 
+    assert(entry != NULL && curr_ptr != NULL);
+    //record the page access situlation
+    // link the most recent arrival page at the back of the pra_list_head qeueue.
+    // 将页面page插入到页面链表pra_list_head的末尾
+    // 将页面的visited标志置为1，表示该页面已被访问
+    list_add((&pra_list_head) -> prev, entry);
+    page->visited=1;
+    return 0;
+}
+```
+- _clock_swap_out_victim函数
+```cpp {.line-numbers}
+static int _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
+{
+     list_entry_t *head=(list_entry_t*) mm->sm_priv;
+         assert(head != NULL);
+     assert(in_tick==0);
+     /* Select the victim */
+     //(1)  unlink the  earliest arrival page in front of pra_list_head qeueue
+     //(2)  set the addr of addr of this page to ptr_page  
+    while (1) {
+        // 遍历页面链表pra_list_head，查找最早未被访问的页面
+        // 获取当前页面对应的Page结构指针
+        // 如果当前页面未被访问，则将该页面从页面链表中删除，并将该页面指针赋值给ptr_page作为换出页面
+        // 如果当前页面已被访问，则将visited标志置为0，表示该页面已被重新访问
+        struct Page * next_ptr = list_next(curr_ptr);
+        if(curr_ptr != &pra_list_head){
+        	struct Page * page = le2page(curr_ptr, pra_page_link);
+        	if(!(page->visited)){
+            	list_del(curr_ptr);
+            	*ptr_page = page;
+            	cprintf("curr_ptr %p\n",curr_ptr);
+            	curr_ptr=next_ptr;
+            	break;
+            }
+            page->visited=0;
+        }
+        curr_ptr=next_ptr;
+    }
+    return 0;
+}
+```
+
+#### 测试结果
+
+通过make grade获取成绩。成功通过了所有check要求，得分45/45。
+
+![](grade.png)
+
+#### 问题解答
 
 ### Exercise5：阅读代码和实现手册，理解页表映射方式相关知识
 
