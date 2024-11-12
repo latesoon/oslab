@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <swap.h>
-#include <swap_fifo.h>
+#include <swap_lru.h>
 #include <list.h>
 
 /* [wikipedia]The simplest Page Replacement Algorithm(PRA) is a FIFO algorithm. The first-in, first-out
@@ -79,40 +79,49 @@ _lru_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
 
 static int
 _lru_check_swap(void) {
-    cprintf("write Virt Page c in fifo_check_swap\n");
+    cprintf("write Virt Page c in lru_check_swap\n");
     *(unsigned char *)0x3000 = 0x0c;
     assert(pgfault_num==4);
-    cprintf("write Virt Page a in fifo_check_swap\n");
+    cprintf("write Virt Page e in lru_check_swap\n");
+    *(unsigned char*)0x3000 = 0x0e;
+    assert(pgfault_num == 4);
+    cprintf("write Virt Page b in lru_check_swap\n");
+    *(unsigned char*)0x3000 = 0x0b;
+    assert(pgfault_num == 4);
+    cprintf("write Virt Page a in lru_check_swap\n");
+    *(unsigned char*)0x3000 = 0x0a;
+    assert(pgfault_num == 4);
+    cprintf("write Virt Page c in lru_check_swap\n");;
     *(unsigned char *)0x1000 = 0x0a;
     assert(pgfault_num==4);
-    cprintf("write Virt Page d in fifo_check_swap\n");
+    cprintf("write Virt Page d in lru_check_swap\n");
     *(unsigned char *)0x4000 = 0x0d;
     assert(pgfault_num==4);
-    cprintf("write Virt Page b in fifo_check_swap\n");
+    cprintf("write Virt Page b in lru_check_swap\n");
     *(unsigned char *)0x2000 = 0x0b;
     assert(pgfault_num==4);
-    cprintf("write Virt Page e in fifo_check_swap\n");
+    cprintf("write Virt Page e in lru_check_swap\n");
     *(unsigned char *)0x5000 = 0x0e;
     assert(pgfault_num==5);
-    cprintf("write Virt Page b in fifo_check_swap\n");
+    cprintf("write Virt Page b in lru_check_swap\n");
     *(unsigned char *)0x2000 = 0x0b;
     assert(pgfault_num==5);
-    cprintf("write Virt Page a in fifo_check_swap\n");
+    cprintf("write Virt Page a in lru_check_swap\n");
     *(unsigned char *)0x1000 = 0x0a;
     assert(pgfault_num==6);
-    cprintf("write Virt Page b in fifo_check_swap\n");
+    cprintf("write Virt Page b in lru_check_swap\n");
     *(unsigned char *)0x2000 = 0x0b;
     assert(pgfault_num==7);
-    cprintf("write Virt Page c in fifo_check_swap\n");
+    cprintf("write Virt Page c in lru_check_swap\n");
     *(unsigned char *)0x3000 = 0x0c;
     assert(pgfault_num==8);
-    cprintf("write Virt Page d in fifo_check_swap\n");
+    cprintf("write Virt Page d in lru_check_swap\n");
     *(unsigned char *)0x4000 = 0x0d;
     assert(pgfault_num==9);
-    cprintf("write Virt Page e in fifo_check_swap\n");
+    cprintf("write Virt Page e in lru_check_swap\n");
     *(unsigned char *)0x5000 = 0x0e;
     assert(pgfault_num==10);
-    cprintf("write Virt Page a in fifo_check_swap\n");
+    cprintf("write Virt Page a in lru_check_swap\n");
     assert(*(unsigned char *)0x1000 == 0x0a);
     *(unsigned char *)0x1000 = 0x0a;
     assert(pgfault_num==11);
