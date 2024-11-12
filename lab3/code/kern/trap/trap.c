@@ -148,7 +148,9 @@ void interrupt_handler(struct trapframe *tf) {
             // directly.
             // clear_csr(sip, SIP_STIP);
             clock_set_next_event();
+
             if (++ticks % TICK_NUM == 0) {
+                
                 print_ticks();
             }
             break;
