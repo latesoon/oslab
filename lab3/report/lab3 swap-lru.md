@@ -11,29 +11,29 @@ LRU算法的核心设计原理是，优先替换在一段时间内最长时间�
 ## 核心设计说明：如何实现LRU页面判定
 主要修改_lru_map_swappable函数，实现LRU算法。
 ```cpp {.line-numbers}
-_lru_map_swappable(struct mm_struct* mm, uintptr_t addr, struct Page* page, int swap_in)
-{
-
-    list_entry_t* head = (list_entry_t*)mm->sm_priv;
-    list_entry_t* entry = &(page->pra_page_link);
-    list_entry_t* curr_ptr = list_next(head);
+static int _lru_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in) {
+    list_entry_t *head = (list_entry_t*) mm->sm_priv;
+    list_entry_t *entry = &(page->pra_page_link);
     assert(entry != NULL && head != NULL);
-    // 如果页面已经在列表中，将其移动到头部
-    if (curr_ptr == NULL)
-    {
-        list_add(head, entry); // 添加到头部
+
+    // 如果链表为空，直接将页面添加到头部
+    if (list_empty(head)) {
+        list_add(head, entry);
         return 0;
     }
-    while (curr_ptr != &pra_list_head)
-    {
-        if (le2page(curr_ptr, pra_page_link) == page)
-        {
-            list_del(curr_ptr);
-            break;
+
+    // 遍历链表，查找页面是否已经在链表中
+    list_entry_t *curr_ptr = list_next(head); // 假设 head 是虚拟头节点，next 指向第一个实际节点
+    while (curr_ptr != head) { // 遍历直到回到链表头部
+        if (le2page(curr_ptr, pra_page_link) == page) {
+            list_del(curr_ptr); // 删除找到的页面节点
+            break; // 跳出循环
         }
-        curr_ptr = list_next(curr_ptr);
+        curr_ptr =  list_next(head); // 移动到下一个节点
     }
-    list_add(head, entry); // 添加到头部
+    
+    // 无论页面之前是否在链表中，都将其添加到头部
+    list_add(head, entry);
     return 0;
 }
 ```
