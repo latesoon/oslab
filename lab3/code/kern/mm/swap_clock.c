@@ -66,6 +66,7 @@ _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, in
  *  (4)_fifo_swap_out_victim: According FIFO PRA, we should unlink the  earliest arrival page in front of pra_list_head qeueue,
  *                            then set the addr of addr of this page to ptr_page.
  */
+
 static int
 _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
 {
