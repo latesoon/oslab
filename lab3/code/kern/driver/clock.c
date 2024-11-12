@@ -6,6 +6,7 @@
 
 volatile size_t ticks;
 
+
 static inline uint64_t get_cycles(void) {
 #if __riscv_xlen == 64
     uint64_t n;
@@ -43,4 +44,7 @@ void clock_init(void) {
     cprintf("++ setup timer interrupts\n");
 }
 
-void clock_set_next_event(void) { sbi_set_timer(get_cycles() + timebase); }
+void clock_set_next_event(void) 
+{ 
+    sbi_set_timer(get_cycles() + timebase); 
+}
