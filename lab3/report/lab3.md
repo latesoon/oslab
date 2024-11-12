@@ -143,4 +143,4 @@ static int _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page,
 
 ### Challenge：实现不考虑实现开销和效率的LRU页替换算法
 
->challenge部分不是必做部分，不过在正确最后会酌情加分。需写出有详细的设计、分析和测试的实验报告。完成出色的可获得适当加分。
+该部分的设计文档单独建立了markdown文件，请参阅lab3 swap-lru.md。
