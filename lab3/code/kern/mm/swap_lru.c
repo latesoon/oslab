@@ -1,9 +1,9 @@
-#include <defs.h>
+ï»¿ï»¿#include <defs.h>
 #include <riscv.h>
 #include <stdio.h>
 #include <string.h>
 #include <swap.h>
-#include <swap_fifo.h>
+#include <swap_lru.h>
 #include <list.h>
 
 
@@ -14,32 +14,42 @@ _lru_init_mm(struct mm_struct* mm)
 {
     list_init(&pra_list_head);
     mm->sm_priv = &pra_list_head;
-  
+
     return 0;
 }
 
-static int _lru_map_swappable(struct mm_struct* mm, uintptr_t addr, struct Page* page, int swap_in) {
+static int
+_lru_tick_event(struct mm_struct* mm)
+{
+    list_entry_t* head = (list_entry_t*)mm->sm_priv;  //headæŒ‡å‘å“¨å…µèŠ‚ç‚¹
+    assert(head != NULL);  //Ö¤ç¡®è®¤headè¢«åˆå§‹åŒ–
+    list_entry_t* entry = list_next(head); //ç¬¬ä¸€èŠ‚ç‚¹
+    while (entry != head)
+    {
+        struct Page* page = le2page(entry, pra_page_link);//entryæŒ‡å‘é¡µé¢
+        pte_t* ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);  //entryé¡µé¢é¡µè¡¨é¡¹
+        if (*ptep & PTE_A)//åˆ¤æ–­Aä½æ˜¯å¦ä¸º1
+        {
+            list_del(entry);
+            list_add(head, entry);
+            *ptep &= ~PTE_A;  //Aæ¢æˆ0
+            tlb_invalidate(mm->pgdir, page->pra_vaddr);
+        }
+        entry = list_prev(head);
+    }
+    cprintf("_lru_tick_event is called!\n");
+
+    return 0;
+}
+
+static int
+_lru_map_swappable(struct mm_struct* mm, uintptr_t addr, struct Page* page, int swap_in)
+{
+
     list_entry_t* head = (list_entry_t*)mm->sm_priv;
     list_entry_t* entry = &(page->pra_page_link);
+
     assert(entry != NULL && head != NULL);
-
-    // Èç¹ûÁ´±íÎª¿Õ£¬Ö±½Ó½«Ò³ÃæÌí¼Óµ½Í·²¿
-    if (list_empty(head)) {
-        list_add(head, entry);
-        return 0;
-    }
-
-    // ±éÀúÁ´±í£¬²éÕÒÒ³ÃæÊÇ·ñÒÑ¾­ÔÚÁ´±íÖĞ
-    list_entry_t* curr_ptr = list_next(head); // ¼ÙÉè head ÊÇĞéÄâÍ·½Úµã£¬next Ö¸ÏòµÚÒ»¸öÊµ¼Ê½Úµã
-    while (curr_ptr != head) { // ±éÀúÖ±µ½»Øµ½Á´±íÍ·²¿
-        if (le2page(curr_ptr, pra_page_link) == page) {
-            list_del(curr_ptr); // É¾³ıÕÒµ½µÄÒ³Ãæ½Úµã
-            break; // Ìø³öÑ­»·
-        }
-        curr_ptr = list_next(head); // ÒÆ¶¯µ½ÏÂÒ»¸ö½Úµã
-    }
-
-    // ÎŞÂÛÒ³ÃæÖ®Ç°ÊÇ·ñÔÚÁ´±íÖĞ£¬¶¼½«ÆäÌí¼Óµ½Í·²¿
     list_add(head, entry);
     return 0;
 }
@@ -62,25 +72,57 @@ _lru_swap_out_victim(struct mm_struct* mm, struct Page** ptr_page, int in_tick)
 }
 
 static int
-_lru_check_swap(void) {
-    cprintf("write Virt Page c in fifo_check_swap\n");
+_lru_check_swap(struct mm_struct* mm)
+{
+    cprintf("write Virt Page c in lru_check_swap\n");
     *(unsigned char*)0x3000 = 0x0c;
+    lru_tick_event(mm);
     assert(pgfault_num == 4);
-    cprintf("write Virt Page a in fifo_check_swap\n");
+    cprintf("write Virt Page a in lru_check_swap\n");
     *(unsigned char*)0x1000 = 0x0a;
+    lru_tick_event(mm);
     assert(pgfault_num == 4);
-    cprintf("write Virt Page d in fifo_check_swap\n");
+    cprintf("write Virt Page d in lru_check_swap\n");
     *(unsigned char*)0x4000 = 0x0d;
+    lru_tick_event(mm);
     assert(pgfault_num == 4);
-    cprintf("write Virt Page b in fifo_check_swap\n");
+    cprintf("write Virt Page b in lru_check_swap\n");
     *(unsigned char*)0x2000 = 0x0b;
+    lru_tick_event(mm);
     assert(pgfault_num == 4);
-    cprintf("write Virt Page e in fifo_check_swap\n");
+    cprintf("write Virt Page e in lru_check_swap\n");
     *(unsigned char*)0x5000 = 0x0e;
+    lru_tick_event(mm);
     assert(pgfault_num == 5);
-    cprintf("write Virt Page d in fifo_check_swap\n");
+    cprintf("write Virt Page b in lru_check_swap\n");
+    *(unsigned char*)0x2000 = 0x0b;
+    lru_tick_event(mm);
+    assert(pgfault_num == 5);
+    cprintf("write Virt Page a in lru_check_swap\n");
+    *(unsigned char*)0x1000 = 0x0a;
+    lru_tick_event(mm);
+    assert(pgfault_num == 6);
+    cprintf("write Virt Page b in lru_check_swap\n");
+    *(unsigned char*)0x2000 = 0x0b;
+    lru_tick_event(mm);
+    assert(pgfault_num == 7);
+    cprintf("write Virt Page c in lru_check_swap\n");
+    *(unsigned char*)0x3000 = 0x0c;
+    lru_tick_event(mm);
+    assert(pgfault_num == 8);
+    cprintf("write Virt Page d in lru_check_swap\n");
     *(unsigned char*)0x4000 = 0x0d;
-    assert(pgfault_num == 5);
+    lru_tick_event(mm);
+    assert(pgfault_num == 9);
+    cprintf("write Virt Page e in lru_check_swap\n");
+    *(unsigned char*)0x5000 = 0x0e;
+    lru_tick_event(mm);
+    assert(pgfault_num == 10);
+    cprintf("write Virt Page a in lru_check_swap\n");
+    assert(*(unsigned char*)0x1000 == 0x0a);
+    *(unsigned char*)0x1000 = 0x0a;
+    lru_tick_event(mm);
+    assert(pgfault_num == 11);
     return 0;
 }
 
@@ -93,12 +135,6 @@ _lru_init(void)
 
 static int
 _lru_set_unswappable(struct mm_struct* mm, uintptr_t addr)
-{
-    return 0;
-}
-
-static int
-_lru_tick_event(struct mm_struct* mm)
 {
     return 0;
 }
