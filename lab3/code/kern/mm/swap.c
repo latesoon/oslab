@@ -161,9 +161,9 @@ check_content_set(void)
 }
 
  static inline int
-check_content_access(struct mm_struct* mm)
+check_content_access(void)
 {
-     int ret = sm->check_swap(mm);
+     int ret = sm->check_swap();
     return ret;
 }
 
