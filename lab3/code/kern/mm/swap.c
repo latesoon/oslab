@@ -139,7 +139,7 @@ swap_in(struct mm_struct *mm, uintptr_t addr, struct Page **ptr_result)
 
 
 
-static inline void
+ static inline void
 check_content_set(void)
 {
      *(unsigned char *)0x1000 = 0x0a;
@@ -160,13 +160,15 @@ check_content_set(void)
      assert(pgfault_num==4);
 }
 
-static inline int
-check_content_access(void)
+ static inline int
+check_content_access(struct mm_struct* mm)
 {
-    int ret = sm->check_swap();
+     int ret = sm->check_swap(mm);
     return ret;
 }
 
+
+ 
 struct Page * check_rp[CHECK_VALID_PHY_PAGE_NUM];
 pte_t * check_ptep[CHECK_VALID_PHY_PAGE_NUM];
 unsigned int check_swap_addr[CHECK_VALID_VIR_PAGE_NUM];
@@ -253,8 +255,10 @@ check_swap(void)
      }
      cprintf("set up init env for check_swap over!\n");
      // now access the virt pages to test  page relpacement algorithm 
-     ret=check_content_access();
-     assert(ret==0);
+
+     ret = check_content_access(mm);
+     assert(ret == 0);
+    
      
      //restore kernel mem env
      for (i=0;i<CHECK_VALID_PHY_PAGE_NUM;i++) {
