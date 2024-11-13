@@ -256,7 +256,7 @@ check_swap(void)
      cprintf("set up init env for check_swap over!\n");
      // now access the virt pages to test  page relpacement algorithm 
 
-     ret = check_content_access(mm);
+     ret = check_content_access();
      assert(ret == 0);
     
      
