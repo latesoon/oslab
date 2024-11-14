@@ -9,34 +9,55 @@ LRU算法的核心设计原理是，优先替换在一段时间内最长时间�
 而自然队尾的项则为最晚被访问的页面。会在产生pgfault时自然被换出。
 
 ## 核心设计说明：如何实现LRU页面判定
-主要修改__lru_tick_event函数，实现LRU算法。
+
+主要修改__lru_tick_event函数和_lru_map_swappable函数，实现LRU算法。
+
+#_lru_map_swappable函数实现
+```cpp {.line-numbers}
+static int
+_lru_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
+{
+    list_entry_t *head=(list_entry_t*) mm->sm_priv;
+    list_entry_t *entry=&(page->pra_page_link);
+ 
+    assert(entry != NULL && head != NULL);
+    //record the page access situlation
+
+    //(1)link the most recent arrival page at the back of the pra_list_head qeueue.
+    list_add(head, entry);
+    page->visited=1;
+    return 0;
+}
+```
+可以看出，在这个函数中，我采用了在ex4的clock算法的实现，通过在访问的时候手动设置当前page页表项的visit位，说明该页被访问
+使其在下文的刷新中可以被发现并放置到最前端。
+
+#_lru_tick_event函数实现
 ```cpp {.line-numbers}
 static int
 _lru_tick_event(struct mm_struct* mm)
 {
-    list_entry_t* head = (list_entry_t*)mm->sm_priv;  //head指向哨兵节点
-    assert(head != NULL);  //֤确认head被初始化
-    list_entry_t* entry = list_next(head); //第一节点
+    cprintf("_lru_tick_event is called!\n");
+    list_entry_t* head = (list_entry_t*)mm->sm_priv;
+    assert(head != NULL);
+    list_entry_t* entry = list_next(head);
     while (entry != head)
     {
-        struct Page* page = le2page(entry, pra_page_link);//entry指向页面
-        pte_t* ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);  //entry页面页表项
-        if (*ptep & PTE_A)//判断A位是否为1
+        struct Page* page = le2page(entry, pra_page_link);
+        if (page->visited)
         {
+            //cprintf("111");
             list_del(entry);
             list_add(head, entry);
-            *ptep &= ~PTE_A;  //A换成0
-            tlb_invalidate(mm->pgdir, page->pra_vaddr);
+            page->visited=0;
         }
-        entry = list_prev(head);
+        entry = list_next(entry);
     }
-    cprintf("_lru_tick_event is called!\n");
-
+    cprintf("_lru_tick_event is finished!\n");
     return 0;
 }
 ```
-
-可以看出，每个时钟触发时，都会遍历当前的页表及其页表项，去访问页表项的A位。如果⻚表项的A位是1，说明⾃从上次A位被清
+可以看出，每次刷新的时候，都会遍历当前的页表及其页表项，去访问页表项的visit位。如果⻚表项的visit位是1，说明⾃从上次A位被清
 零后，有虚拟地址通过这个⻚表项进⾏读、或者写、或者取指，也就是说被访问，需要移⾄链表的⾸部。
 对于其他函数， _lru_map_swappable 插⼊时依旧插在链表头部， _lru_swap_out_victim 删除时则应当在尾部删除。
 这样，结合时钟中断的特性触发 _lru_tick_event 函数即可达到通过时钟实现的LRU⻚⾯置换算法。
