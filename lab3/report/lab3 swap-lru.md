@@ -63,6 +63,7 @@ _lru_tick_event(struct mm_struct* mm)
 这样，结合时钟中断的特性触发 _lru_tick_event 函数即可达到通过时钟实现的LRU⻚⾯置换算法。
 
 #### 测试结果
+
 ## 核心测试说明：fifo和lru在结果上的不同
 在初始化的环节，也就是check_content_set函数中，已经将a,b,c,d按照顺序换入了页面。
 之后在check_content_access中，我们进行了按照下图所示的测试案例。
@@ -70,20 +71,23 @@ _lru_tick_event(struct mm_struct* mm)
 ![](lru_test.png)
 
 #基于fifo逻辑
+
 访问顺序为c,a,d,b,e,c
 由于前四次访问是访问已经存在的页面，所以他并不会改变链表的顺序，仍然为abcd，所以在第五次访问e的时候，会产生一次缺页异常，会选择将列表第一个也就是a换出去，成为e,b,c,d。
 在最后一次访问时，换c不会产生异常，因为已经存在了。
 所以assert应该为num == 5，则除了初始的4次只有一次e的异常。
 
 #基于lru逻辑
+
 访问顺序为c,a,d,b,e,c
 由于前四次访问是访问已经存在的页面，基于lru会改变链表的顺序，为cadb，所以在第五次访问e的时候，会产生一次缺页异常，会选择将列表第一个也就是c换出去，成为a,b,e,d。
 在最后一次访问时，换c会产生异常，变为c,b,e,d.
 所以assert应该为num == 6，则除了初始的4次和一次e的异常还有一次c的异常。
 
 #测试结果
+结果为设置assert（num == 6） 的情况下成功的通过了测试，代表采用了LRU并不是FIFO，测试成功。
 
 ![](lru_grade.png)
-结果为设置assert（num == 6） 的情况下成功的通过了测试，代表采用了LRU并不是FIFO，测试成功。
+
 
 
