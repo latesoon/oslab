@@ -6,7 +6,57 @@
 
 >描述FIFO页面置换算法下，一个页面从被换入到被换出的过程中，会经过代码里哪些函数/宏的处理（或者说，需要调用哪些函数/宏），并用简单的一两句话描述每个函数在过程中做了什么？（为了方便同学们完成练习，所以实际上我们的项目代码和实验指导的还是略有不同，例如我们将FIFO页面置换算法头文件的大部分代码放在了`kern/mm/swap_fifo.c`文件中，这点请同学们注意）
 至少正确指出10个不同的函数分别做了什么？如果少于10个将酌情给分。我们认为只要函数原型不同，就算两个不同的函数。要求指出对执行过程有实际影响,删去后会导致输出结果不同的函数（例如assert）而不是cprintf这样的函数。如果你选择的函数不能完整地体现“从换入到换出”的过程，比如10个函数都是页面换入的时候调用的，或者解释功能的时候只解释了这10个函数在页面换入时的功能，那么也会扣除一定的分数。
+#### 页面置换具体流程
 
+当发生缺页错误时，系统会将错误信息传递给Page Fault传递给`kern/trap/trap.c`中的`exception_handler`进行分类并打印错误信息。随后错误信息会传递给`do_pgfault`函数尝试进行页面置换。
+当进入到`do_pgfault`中时，同时会传入相对应的参数如页面结构体`mm`和发生缺页异常的地址`addr`。随后通过`find_vma`以及`get_pte`等函数，找到发生缺页异常地址对应的`vma`结构体以及页表和页表项。此时若找不到对应的页表项则会重新创建，并将其全部置0，同时会在后续分配物理页面进行映射关系的建立。
+根据查找到的页表项后，会出现两种情况：
+1.得到的页表项为0（无论他是新创建的还是本身存在），即该页从未被分配过物理地址。
+2.得到的页表项不为0，则该页存在分配过物理地址的情况，
+针对第一种情况，程序将调用`pgdir_alloc_page`函数分配新的物理页并通过`page_insert`建立新的映射。其中分配物理页的过程会通过对`alloc_page`以及`swap_out`等函数，实现对页面的换出及换入。
+而在第二种情况中，先通过`swap_in`将页面内容读入并通过`page_insert`将虚拟地址和物理地址的映射关系写入到页表项中，最后通过`swap_map_swappable`以及不同的`swap_manager`结构体进行页面交换策略的选择和实现。
+
+#### FIFO页面替换算法中具体函数的内容
+
+上一部分主要分析了页面置换整个流程的主要工作，下面将描述在FIFO页面置换算法下，各个重要函数的基本功能。
+
+1. `do_pgfault` 页面置换算法的主体函数，整个缺页处理流程从此开始。
+2. `find vma` 在vma结构体链表中找到包含传入错误地址的vma并进行更新。
+3. `get_pte` 函数会根据得到的虚拟地址，在三级页表中进行查找。在查找页表项的时候，如果页表项无效的话会给页表项分配一个全是0的页并建立映射。最后返回虚拟地址对应的一级页表的页表项。
+4. `page_remove_pte` 若判定两页表项不同，则调用此函数将页表项释放。
+5. `pte_create` 在`page_remove_pte`之后建立新的页表项比那个将其赋值给`get_pte`找到的页表项的地址,直接根据物理页号进行偏移并对标志位进行设置完成。
+6. `pgdir_alloc_page`&`alloc_page(s)` 通过对`alloc_pages(1)`，根据FIFO算法分配一个物理页面，并进一步调用`swap_out`函数。
+7. `page_insert` 完成建立虚拟地址和页面的映射关系的创建和保存，会调用的前面提及的`get_pte` 、`page_remove_pte`、`pte_create`函数
+8. `swap_in` 根据页表项和地址的映射从硬盘中读取对应的内容，并重新写入内存。
+9. `swap_out` 将页面换出到硬盘中。
+10. `swap_map_swappable` 在FIFO算法下实例为`_fifo_map swappable`来实现页面的换入，并将其存储于FIFO的链表头。
+11. `swapfs_read` 模拟从IDE设备的特定扇区读入数据。
+12. `swapfs_write` 模拟从IDE设备的特定扇区写入数据。
+13. `swap_out_victim` 
+```cpp {.line-numbers}
+static int
+_fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
+{
+     list_entry_t *head=(list_entry_t*) mm->sm_priv;
+         assert(head != NULL);
+     assert(in_tick==0);
+     /* Select the victim */
+     //(1)  unlink the  earliest arrival page in front of pra_list_head qeueue
+     //(2)  set the addr of addr of this page to ptr_page
+    list_entry_t* entry = list_prev(head);
+    if (entry != head) {
+        list_del(entry);
+        *ptr_page = le2page(entry, pra_page_link);
+    } else {
+        *ptr_page = NULL;
+    }
+    return 0;
+}
+```
+在FIFO算法下实例为`_fifo_swap_out_victim`来实现对页面的换出，即将最先进入链表的页面进行换出操作。
+
+14. `free_page` 将被换出的物理页释放从而重新尝试分配。
+15. `tlb_invalidate` 在换出流程结束后刷新TLB，防止错误发生。
 ### Exercise2：深入理解不同分页模式的工作原理
 
 >get_pte()函数（位于`kern/mm/pmm.c`）用于在页表中查找或创建页表项，从而实现对指定线性地址对应的物理页的访问和映射操作。这在操作系统中的分页机制下，是实现虚拟内存与物理内存之间映射关系非常重要的内容。
