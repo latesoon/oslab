@@ -32,6 +32,7 @@ _lru_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int 
     page->visited=1;
     return 0;
 }
+
 static int
 _lru_swap_out_victim(struct mm_struct* mm, struct Page** ptr_page, int in_tick)
 {
