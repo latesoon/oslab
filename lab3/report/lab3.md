@@ -54,8 +54,8 @@ _fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick
 }
 ```
 在FIFO算法下实例为`_fifo_swap_out_victim`来实现对页面的换出，即将最先进入链表的页面进行换出操作。
-14.`free_page` 将被换出的物理页释放从而重新尝试分配。
-15.`tlb_invalidate` 在换出流程结束后刷新TLB，防止错误发生。
+14. `free_page` 将被换出的物理页释放从而重新尝试分配。
+15. `tlb_invalidate` 在换出流程结束后刷新TLB，防止错误发生。
 ### Exercise2：深入理解不同分页模式的工作原理
 
 >get_pte()函数（位于`kern/mm/pmm.c`）用于在页表中查找或创建页表项，从而实现对指定线性地址对应的物理页的访问和映射操作。这在操作系统中的分页机制下，是实现虚拟内存与物理内存之间映射关系非常重要的内容。
