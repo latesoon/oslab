@@ -20,19 +20,19 @@
 
 上一部分主要分析了页面置换整个流程的主要工作，下面将描述在FIFO页面置换算法下，各个重要函数的基本功能。
 
-1.`do_pgfault` 页面置换算法的主体函数，整个缺页处理流程从此开始。
-2.`find vma` 在vma结构体链表中找到包含传入错误地址的vma并进行更新。
-3.`get_pte` 函数会根据得到的虚拟地址，在三级页表中进行查找。在查找页表项的时候，如果页表项无效的话会给页表项分配一个全是0的页并建立映射。最后返回虚拟地址对应的一级页表的页表项。
-4.`page_remove_pte` 若判定两页表项不同，则调用此函数将页表项释放。
-5.`pte_create` 在`page_remove_pte`之后建立新的页表项比那个将其赋值给`get_pte`找到的页表项的地址,直接根据物理页号进行偏移并对标志位进行设置完成。
-6.`pgdir_alloc_page`&`alloc_page(s)` 通过对`alloc_pages(1)`，根据FIFO算法分配一个物理页面，并进一步调用`swap_out`函数。
-7.`page_insert` 完成建立虚拟地址和页面的映射关系的创建和保存，会调用的前面提及的`get_pte` 、`page_remove_pte`、`pte_create`函数
-8.`swap_in` 根据页表项和地址的映射从硬盘中读取对应的内容，并重新写入内存。
-9.`swap_out` 将页面换出到硬盘中。
-10.`swap_map_swappable` 在FIFO算法下实例为`_fifo_map swappable`来实现页面的换入，并将其存储于FIFO的链表头。
-11.`swapfs_read` 模拟从IDE设备的特定扇区读入数据。
-12.`swapfs_write` 模拟从IDE设备的特定扇区写入数据。
-13.`swap_out_victim` 
+1. `do_pgfault` 页面置换算法的主体函数，整个缺页处理流程从此开始。
+2. `find vma` 在vma结构体链表中找到包含传入错误地址的vma并进行更新。
+3. `get_pte` 函数会根据得到的虚拟地址，在三级页表中进行查找。在查找页表项的时候，如果页表项无效的话会给页表项分配一个全是0的页并建立映射。最后返回虚拟地址对应的一级页表的页表项。
+4. `page_remove_pte` 若判定两页表项不同，则调用此函数将页表项释放。
+5. `pte_create` 在`page_remove_pte`之后建立新的页表项比那个将其赋值给`get_pte`找到的页表项的地址,直接根据物理页号进行偏移并对标志位进行设置完成。
+6. `pgdir_alloc_page`&`alloc_page(s)` 通过对`alloc_pages(1)`，根据FIFO算法分配一个物理页面，并进一步调用`swap_out`函数。
+7. `page_insert` 完成建立虚拟地址和页面的映射关系的创建和保存，会调用的前面提及的`get_pte` 、`page_remove_pte`、`pte_create`函数
+8. `swap_in` 根据页表项和地址的映射从硬盘中读取对应的内容，并重新写入内存。
+9. `swap_out` 将页面换出到硬盘中。
+10. `swap_map_swappable` 在FIFO算法下实例为`_fifo_map swappable`来实现页面的换入，并将其存储于FIFO的链表头。
+11. `swapfs_read` 模拟从IDE设备的特定扇区读入数据。
+12. `swapfs_write` 模拟从IDE设备的特定扇区写入数据。
+13. `swap_out_victim` 
 ```cpp {.line-numbers}
 static int
 _fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
