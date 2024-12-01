@@ -96,10 +96,10 @@ alloc_proc(void)
         proc->pid = -1;                                
         proc->runs = 0;
         proc->kstack = (uintptr_t)0;
-        proc->need_resched = false;
+        proc->need_resched = 0;
         proc->parent = NULL;                 
         proc->mm = NULL;
-        memset(&(proc->context), 0, sizeof(context));
+        memset(&(proc->context), 0, sizeof(struct context));
         proc->tf = NULL;
         proc->cr3 = boot_cr3;
         proc->flags = 0; 
@@ -165,7 +165,7 @@ void
 proc_run(struct proc_struct *proc)
 {
     if (proc != current) {
-        // LAB4:EXERCISE3 YOUR CODE
+        // LAB4:EXERCISE3 2211290 2211312 2211320
         /*
         * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
         * MACROs or Functions:
@@ -174,7 +174,13 @@ proc_run(struct proc_struct *proc)
         *   lcr3():                   Modify the value of CR3 register
         *   switch_to():              Context switching between two processes
         */
-       
+        bool intr_flag;
+        struct proc_struct *last = current;
+        local_intr_save(intr_flag);
+        current = proc;
+        lcr3(proc->cr3);
+        switch_to(&(last->context), &(proc->context));
+        local_intr_restore(intr_flag);
     }
 }
 
@@ -283,36 +289,36 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe* tf)
     ret = -E_NO_MEM;
     //LAB4:EXERCISE2 YOUR CODE
     //2211320 2211312 2211290
-    if ((proc = alloc_proc()) == NULL) //·ÖÅä²¢³õÊ¼»¯½ø³Ì¿ØÖÆ¿é£¨alloc_procº¯Êı£©
+    if ((proc = alloc_proc()) == NULL) //ï¿½ï¿½ï¿½ä²¢ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½Ì¿ï¿½ï¿½Æ¿é£¨alloc_procï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     {
         goto fork_out;
     }
 
-    if (setup_kstack(proc) != 0)// ·ÖÅä²¢³õÊ¼»¯ÄÚºËÕ»£¨setup_stackº¯Êı£©
+    if (setup_kstack(proc) != 0)// ï¿½ï¿½ï¿½ä²¢ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½Úºï¿½Õ»ï¿½ï¿½setup_stackï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     {
         goto bad_fork_cleanup_kstack;
     }
-    // ¸ù¾İclone_flags¾ö¶¨ÊÇ¸´ÖÆ»¹ÊÇ¹²ÏíÄÚ´æ¹ÜÀíÏµÍ³£¨copy_mmº¯Êı£©
+    // ï¿½ï¿½ï¿½ï¿½clone_flagsï¿½ï¿½ï¿½ï¿½ï¿½Ç¸ï¿½ï¿½Æ»ï¿½ï¿½Ç¹ï¿½ï¿½ï¿½ï¿½Ú´ï¿½ï¿½ï¿½ï¿½ÏµÍ³ï¿½ï¿½copy_mmï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     if (copy_mm(clone_flags, proc) != 0)
     {
         goto bad_fork_cleanup_proc;
     }
-    //ÉèÖÃ½ø³ÌµÄÖĞ¶ÏÖ¡ºÍÉÏÏÂÎÄ£¨copy_threadº¯Êı£©
+    //ï¿½ï¿½ï¿½Ã½ï¿½ï¿½Ìµï¿½ï¿½Ğ¶ï¿½Ö¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£ï¿½copy_threadï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     copy_thread(proc, stack, tf);
-    //°ÑÉèÖÃºÃµÄ½ø³Ì¼ÓÈëÁ´±í(²»ÄÜ±»´ò¶Ï)
-    //ÓĞÒ»¸ö¹şÏ£±í£¬Ò»¸ö½ø³Ì±í
+    //ï¿½ï¿½ï¿½ï¿½ï¿½ÃºÃµÄ½ï¿½ï¿½Ì¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½ï¿½Ü±ï¿½ï¿½ï¿½ï¿?)
+    //ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½Ï£ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ì±ï¿½
     bool inter_flag;
     local_intr_save(inter_flag);
     {
-        proc->pid = getpid();
-        hash_proc(proc);   //¹şÏ£±í
-        list_add(&proc_list, &(proc->list_link));//½ø³Ì±í
+        proc->pid = get_pid();
+        hash_proc(proc);   //ï¿½ï¿½Ï£ï¿½ï¿½
+        list_add(&proc_list, &(proc->list_link));//ï¿½ï¿½ï¿½Ì±ï¿½
     }
     local_intr_restore(inter_flag);
-    //½«ĞÂ½¨µÄ½ø³ÌÉèÎª¾ÍĞ÷Ì¬
+    //ï¿½ï¿½ï¿½Â½ï¿½ï¿½Ä½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½Ì¬
     wakeup_proc(proc);
-    //½«·µ»ØÖµÉèÎªÏß³Ìid
-    ret = proc->id();
+    //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½ï¿½Îªï¿½ß³ï¿½id
+    ret = proc->pid;
 
 fork_out:
     return ret;
