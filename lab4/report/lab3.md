@@ -2,17 +2,39 @@
 
 ### 姚知言 2211290 贾景顺 2211312 李政远 2211320
 
-### 文件结构解释
-`code/basic`文件夹中对应各基础练习部分。
-
-`code/lru`文件夹对应challenge部分lru的实现。
-
 ### Exercise1：分配并初始化一个进程控制块
 
 >alloc_proc函数（位于kern/process/proc.c中）负责分配并返回一个新的struct proc_struct结构，用于存储新建立的内核线程的管理信息。ucore需要对这个结构进行最基本的初始化，你需要完成这个初始化过程。
 
+在proc.h头文件中，标记了proc_struct结构体的成员，分别为
+```cpp {.line-numbers}
+struct proc_struct {
+    enum proc_state state;                      // Process state
+    int pid;                                    // Process ID
+    int runs;                                   // the running times of Proces
+    uintptr_t kstack;                           // Process kernel stack
+    volatile bool need_resched;                 // bool value: need to be rescheduled to release CPU?
+    struct proc_struct *parent;                 // the parent process
+    struct mm_struct *mm;                       // Process's memory management field
+    struct context context;                     // Switch here to run process
+    struct trapframe *tf;                       // Trap frame for current interrupt
+    uintptr_t cr3;                              // CR3 register: the base addr of Page Directroy Table(PDT)
+    uint32_t flags;                             // Process flag
+    char name[PROC_NAME_LEN + 1];               // Process name
+    list_entry_t list_link;                     // Process link list 
+    list_entry_t hash_link;                     // Process hash list
+};
+```
+而在基本初始化过程中，我需要特别初始化三个成员，为proc->state = PROC_UNINIT;设置了进程的状态为“初始”态，这表示进程已经 “出生”了，正在获取资源茁壮成长中；
+proc->pid = -1;设置了进程的pid为-1，这表示进程的“身份证号”还没有办好；
+proc->cr3 = boot_cr3; 表明由于该内核线程在内核中运行，故采用为uCore内核已经建立的页表，即设置为在uCore内核页表的起始地址boot_cr3。后续实验中可进一步看出所有内核线程的内核虚地址空间（也包括物理地址空间）是相同的。既然内核线程共用一个映射内核空间的页表，这表示内核空间对所有内核线程都是“可见”的，所以更精确地说，这些内核线程都应该是从属于同一个唯一的“大内核进程”—uCore内核。
+其他的则全部初始化为0即可。
+
 >请在实验报告中简要说明你的设计实现过程。请回答如下问题：
 请说明proc_struct中struct context context和struct trapframe *tf成员变量含义和在本实验中的作用是啥？（提示通过看代码和编程调试可以判断出来）
+
+struct context context：储存进程当前状态，用于进程切换中上下文的保存与恢复。
+struct trapframe tf：内核态中的线程返回用户态所加载的上下文，中断返回时，新进程会恢复保存的trapframe信息至各个寄存器中，然后开始执行用户代码。
 
 ### Exercise2：为新创建的内核线程分配资源
 
