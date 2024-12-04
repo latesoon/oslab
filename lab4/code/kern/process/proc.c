@@ -289,35 +289,34 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe* tf)
     ret = -E_NO_MEM;
     //LAB4:EXERCISE2 YOUR CODE
     //2211320 2211312 2211290
-    if ((proc = alloc_proc()) == NULL) //���䲢��ʼ�����̿��ƿ飨alloc_proc������
+    if ((proc = alloc_proc()) == NULL) 
     {
         goto fork_out;
     }
 
-    if (setup_kstack(proc) != 0)// ���䲢��ʼ���ں�ջ��setup_stack������
+    if (setup_kstack(proc) != 0)
     {
         goto bad_fork_cleanup_kstack;
     }
-    // ����clone_flags�����Ǹ��ƻ��ǹ����ڴ����ϵͳ��copy_mm������
+
     if (copy_mm(clone_flags, proc) != 0)
     {
         goto bad_fork_cleanup_proc;
     }
-    //���ý��̵��ж�֡�������ģ�copy_thread������
+
     copy_thread(proc, stack, tf);
-    //�����úõĽ��̼�������(���ܱ����?)
-    //��һ����ϣ����һ�����̱�
+
     bool inter_flag;
     local_intr_save(inter_flag);
     {
         proc->pid = get_pid();
-        hash_proc(proc);   //��ϣ��
-        list_add(&proc_list, &(proc->list_link));//���̱�
+        hash_proc(proc);  
+        list_add(&proc_list, &(proc->list_link));
     }
     local_intr_restore(inter_flag);
-    //���½��Ľ�����Ϊ����̬
+
     wakeup_proc(proc);
-    //������ֵ��Ϊ�߳�id
+  
     ret = proc->pid;
 
 fork_out:
