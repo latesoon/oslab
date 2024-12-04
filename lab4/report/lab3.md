@@ -47,8 +47,106 @@ struct trapframe tf：内核态中的线程返回用户态所加载的上下文�
 唤醒新进程
 返回新进程号
 
+
+根据他的大致执行步骤给出代码
+```cpp {.line-numbers}
+int
+do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe* tf)
+{
+    int ret = -E_NO_FREE_PROC;
+    struct proc_struct* proc;
+    if (nr_process >= MAX_PROCESS)
+    {
+        goto fork_out;
+    }
+
+    ret = -E_NO_MEM;
+    //LAB4:EXERCISE2 YOUR CODE
+    //2211320 2211312 2211290
+    if ((proc = alloc_proc()) == NULL) 
+    {
+        goto fork_out;
+    }
+
+    if (setup_kstack(proc) != 0)
+    {
+        goto bad_fork_cleanup_kstack;
+    }
+
+    if (copy_mm(clone_flags, proc) != 0)
+    {
+        goto bad_fork_cleanup_proc;
+    }
+
+    copy_thread(proc, stack, tf);
+
+    bool inter_flag;
+    local_intr_save(inter_flag);
+    {
+        proc->pid = get_pid();
+        hash_proc(proc);  
+        list_add(&proc_list, &(proc->list_link));
+    }
+    local_intr_restore(inter_flag);
+
+    wakeup_proc(proc);
+  
+    ret = proc->pid;
+
+fork_out:
+    return ret;
+
+bad_fork_cleanup_kstack:
+    put_kstack(proc);
+bad_fork_cleanup_proc:
+    kfree(proc);
+    goto fork_out;
+}
+```
+
 >请在实验报告中简要说明你的设计实现过程。请回答如下问题：
 请说明ucore是否做到给每个新fork的线程一个唯一的id？请说明你的分析和理由。
+是。
+
+(last_pid,nextsafe]这个区间是空闲的。
+在函数get_pid中，如果静态成员last_pid小于next_safe，则当前分配的last_pid一定是安全的，即唯一的PID。
+但如果last_pid大于等于next_safe，或者last_pid的值超过MAX_PID，则当前的last_pid就不一定是唯一的PID，此时就需要遍历proc_list，重新对last_pid和next_safe进行设置，为下一次的get_pid调用打下基础。
+```cpp {.line-numbers}
+// get_pid - alloc a unique pid for process
+static int
+get_pid(void) {
+static_assert(MAX_PID > MAX_PROCESS);
+struct proc_struct *proc;
+list_entry_t *list = &proc_list, *le;
+static int next_safe = MAX_PID, last_pid = MAX_PID;
+if (++ last_pid >= MAX_PID) {
+last_pid = 1;
+goto inside;
+}
+if (last_pid >= next_safe) {
+inside:
+next_safe = MAX_PID;
+repeat:
+le = list;
+while ((le = list_next(le)) != list) {
+proc = le2proc(le, list_link);
+if (proc->pid == last_pid) {
+if (++ last_pid >= next_safe) {
+if (last_pid >= MAX_PID)
+last_pid = 1;
+next_safe = MAX_PID;
+goto repeat;
+}
+}
+else if (proc->pid > last_pid && next_safe > proc->pid)
+next_safe = proc->pid;
+}
+}
+return last_pid;
+}
+```
+
+
 
 ### Exercise3：编写proc_run 函数
 
