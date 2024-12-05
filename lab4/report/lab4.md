@@ -291,7 +291,7 @@ void cpu_idle(void) {
 
 在函数`schedule()`中，实现了FIFO策略的进程调度，而为了保证进程上下文切换这一操作的原子性，则需要通过`local_intr_save(intr_flag);....local_intr_restore(intr_flag);`这一对内联函数实现中断状态的关闭、保存以及再开启，形成临界区来保证代码的正确执行。
 
-在riscV的架构下，中断的开关状态由sstatus寄存器中的SIE位（Machine Interrupt Enable中断使能位）进行控制，通过读取这一字段，可以实现中断的关闭以及恢复操作。具体如下：
+在riscV的架构下，中断的开关状态由sstatus寄存器中的SIE位（System Interrupt Enable中断使能位）进行控制，通过读取这一字段，可以实现中断的关闭以及恢复操作。具体如下：
 
 1.`local_intr_save(intr_flag);`——通过使用riscV的特权指令(可能是csrr)读取sstatus寄存器并将其保存到临时变量`intr_flag`中，便于后续的恢复操作，随后使用指令(可能是csrc)将 SIE 位清零，禁用中断。
 
