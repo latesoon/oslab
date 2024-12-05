@@ -1,6 +1,10 @@
-# lab3 操作系统实验报告
+# lab4 操作系统实验报告
 
 ### 姚知言 2211290 贾景顺 2211312 李政远 2211320
+
+### Exercise0：填写已有实验
+
+需要在`vmm.c`中，补全lab3 exercise3给未被映射的地址映射上物理页的内容。
 
 ### Exercise1：分配并初始化一个进程控制块
 
@@ -93,56 +97,55 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe* tf)
   
     ret = proc->pid;
 
-fork_out:
-    return ret;
-
-bad_fork_cleanup_kstack:
-    put_kstack(proc);
-bad_fork_cleanup_proc:
-    kfree(proc);
+    fork_out:
+        return ret;
+    bad_fork_cleanup_kstack:
+        put_kstack(proc);
+    bad_fork_cleanup_proc:
+        kfree(proc);
     goto fork_out;
 }
 ```
 
 >请在实验报告中简要说明你的设计实现过程。请回答如下问题：
 请说明ucore是否做到给每个新fork的线程一个唯一的id？请说明你的分析和理由。
+
 是。
 
-(last_pid,nextsafe]这个区间是空闲的。
+`(last_pid,nextsafe]`这个区间是空闲的。
 在函数get_pid中，如果静态成员last_pid小于next_safe，则当前分配的last_pid一定是安全的，即唯一的PID。
 但如果last_pid大于等于next_safe，或者last_pid的值超过MAX_PID，则当前的last_pid就不一定是唯一的PID，此时就需要遍历proc_list，重新对last_pid和next_safe进行设置，为下一次的get_pid调用打下基础。
 ```cpp {.line-numbers}
 // get_pid - alloc a unique pid for process
-static int
-get_pid(void) {
-static_assert(MAX_PID > MAX_PROCESS);
-struct proc_struct *proc;
-list_entry_t *list = &proc_list, *le;
-static int next_safe = MAX_PID, last_pid = MAX_PID;
-if (++ last_pid >= MAX_PID) {
-last_pid = 1;
-goto inside;
-}
-if (last_pid >= next_safe) {
-inside:
-next_safe = MAX_PID;
-repeat:
-le = list;
-while ((le = list_next(le)) != list) {
-proc = le2proc(le, list_link);
-if (proc->pid == last_pid) {
-if (++ last_pid >= next_safe) {
-if (last_pid >= MAX_PID)
-last_pid = 1;
-next_safe = MAX_PID;
-goto repeat;
-}
-}
-else if (proc->pid > last_pid && next_safe > proc->pid)
-next_safe = proc->pid;
-}
-}
-return last_pid;
+static int get_pid(void) {
+    static_assert(MAX_PID > MAX_PROCESS);
+    struct proc_struct *proc;
+    list_entry_t *list = &proc_list, *le;
+    static int next_safe = MAX_PID, last_pid = MAX_PID;
+    if (++ last_pid >= MAX_PID) {
+        last_pid = 1;
+        goto inside;
+    }
+    if (last_pid >= next_safe) {
+        inside:
+            next_safe = MAX_PID;
+        repeat:
+            le = list;
+        while ((le = list_next(le)) != list) {
+            proc = le2proc(le, list_link);
+            if (proc->pid == last_pid) {
+                if (++ last_pid >= next_safe) {
+                    if (last_pid >= MAX_PID)
+                        last_pid = 1;
+                    next_safe = MAX_PID;
+                    goto repeat;
+                }
+            }
+            else if (proc->pid > last_pid && next_safe > proc->pid)
+                next_safe = proc->pid;
+        }
+    }
+    return last_pid;
 }
 ```
 
@@ -158,7 +161,138 @@ return last_pid;
 实现上下文切换。/kern/process中已经预先编写好了switch.S，其中定义了switch_to()函数。可实现两个进程的context切换。
 允许中断。
 
->请回答如下问题：
-在本实验的执行过程中，创建且运行了几个内核线程？
+#### 编程实现
 
-### Challenge：说明语句local_intr_save(intr_flag);....local_intr_restore(intr_flag);是如何实现开关中断的？
+在本函数中，包括两个进程结构体指针`proc`和`current`，表示要切换的进程和当前正在运行的进程。当两进程不同时，需要进行切换。
+
+为保证进程切换过程不被中断打断，需要在切换开始前调用`local_intr_save()`禁用中断，在切换结束后调用`local_intr_restore()`重新启用中断。
+
+进程切换主要逻辑如下：
+
+1. 为保证后续调用，我们需要先定义临时变量`last`存储之前的`current`,并将`current`指向新的进程`proc`。
+2. `lcr3(proc->cr3)`，以新进程的cr3，修改cr3寄存器的值，实现页表切换。
+3. 调用`switch_to`函数，完成上下文切换。
+
+实现代码如下：
+
+proc.c
+```cpp {.line-numbers}
+void proc_run(struct proc_struct *proc)
+{
+    if (proc != current) {
+        // LAB4:EXERCISE3 2211290 2211312 2211320
+        /*
+        * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
+        * MACROs or Functions:
+        *   local_intr_save():        Disable interrupts
+        *   local_intr_restore():     Enable Interrupts
+        *   lcr3():                   Modify the value of CR3 register
+        *   switch_to():              Context switching between two processes
+        */
+        bool intr_flag;
+        struct proc_struct *last = current;
+        local_intr_save(intr_flag);
+        current = proc;
+        lcr3(proc->cr3);
+        switch_to(&(last->context), &(proc->context));
+        local_intr_restore(intr_flag);
+    }
+}
+```
+
+#### 测试结果
+
+运行`make qemu`，能够得到正确的结果。
+
+![](qemu.png)
+
+运行`make grade`,得到了全部的分数。
+
+![](score.png)
+
+#### 问题解答
+
+>在本实验的执行过程中，创建且运行了几个内核线程？
+
+一共创建且运行了2个内核进程。即`idle_proc`和`init_proc`。
+
+在kern_init中，关于进程创建和运行的函数主要包括：`proc_init`和`cpu_idle`。
+
+在`proc_init`函数中，创建了以上两个进程，并将当前进程设置为`proc_init`。
+
+```cpp {.line-numbers}
+int kern_init(void) {
+    extern char edata[], end[];
+    memset(edata, 0, end - edata);
+
+    cons_init();                // init the console
+
+    const char *message = "(THU.CST) os is loading ...";
+    cprintf("%s\n\n", message);
+
+    print_kerninfo();
+
+    // grade_backtrace();
+
+    pmm_init();                 // init physical memory management
+
+    pic_init();                 // init interrupt controller
+    idt_init();                 // init interrupt descriptor table
+
+    vmm_init();                 // init virtual memory management
+    proc_init();                // init process table
+    
+    ide_init();                 // init ide devices
+    swap_init();                // init swap
+
+    clock_init();               // init clock interrupt
+    intr_enable();              // enable irq interrupt
+
+    cpu_idle();                 // run idle process
+}
+```
+
+在`cpu_idle`中，idle进程执行cpu_idle()函数。
+
+```cpp {.line-numbers}
+void cpu_idle(void) {
+    while (1) {
+        if (current->need_resched) {
+            schedule();
+        }
+    }
+}
+```
+
+而在`proc_init`中，已经将current->need_resched置为1，表示该进程需要被调度，以执行其他进程的工作。
+
+调用`schedule`后，会从进程链表中找到第一个可执行的进程，在本题中即为`init`进程。
+
+1. idle进程：第一个内核进程，在初始化后和没有可执行进程时执行，在死循环中持续寻找是否有可执行的进程。
+2. init进程：在初始化中创建的另一个进程。
+   ```cpp {.line-numbers}
+   int pid = kernel_thread(init_main, "Hello world!!", 0);
+   ```
+   通过以上函数创建，定义其执行的主函数为`init_main`，参数列表为"Hello world!"。
+   在`schedule`后开始执行，完成要求的打印。
+   ```cpp {.line-numbers}
+   static int init_main(void *arg) {
+    cprintf("this initproc, pid = %d, name = \"%s\"\n", current->pid, get_proc_name(current));
+    cprintf("To U: \"%s\".\n", (const char *)arg);
+    cprintf("To U: \"en.., Bye, Bye. :)\"\n");
+    return 0;
+   }
+   ```
+
+
+
+### Challenge：
+>说明语句`local_intr_save(intr_flag);....local_intr_restore(intr_flag);`是如何实现开关中断的？
+
+在函数`schedule()`中，实现了FIFO策略的进程调度，而为了保证进程上下文切换这一操作的原子性，则需要通过`local_intr_save(intr_flag);....local_intr_restore(intr_flag);`这一对内联函数实现中断状态的关闭、保存以及再开启，形成临界区来保证代码的正确执行。
+
+在riscV的架构下，中断的开关状态由sstatus寄存器中的SIE位（Machine Interrupt Enable中断使能位）进行控制，通过读取这一字段，可以实现中断的关闭以及恢复操作。具体如下：
+
+1.`local_intr_save(intr_flag);`——通过使用riscV的特权指令(可能是csrr)读取sstatus寄存器并将其保存到临时变量`intr_flag`中，便于后续的恢复操作，随后使用指令(可能是csrc)将 SIE 位清零，禁用中断。
+
+2.`local_intr_restore(intr_flag);`——首先会检查临时变量`intr_flag`的bool值，如果其值为false，则说明之前中断处于关闭状态，需要重新设置SIE位将其恢复；而其值若为true，则代表中断已处于开启状态，无需进行额外操作。
