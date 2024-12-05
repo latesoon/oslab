@@ -34,6 +34,33 @@ proc->pid = -1;设置了进程的pid为-1，这表示进程的“身份证号”
 proc->cr3 = boot_cr3; 表明由于该内核线程在内核中运行，故采用为uCore内核已经建立的页表，即设置为在uCore内核页表的起始地址boot_cr3。后续实验中可进一步看出所有内核线程的内核虚地址空间（也包括物理地址空间）是相同的。既然内核线程共用一个映射内核空间的页表，这表示内核空间对所有内核线程都是“可见”的，所以更精确地说，这些内核线程都应该是从属于同一个唯一的“大内核进程”—uCore内核。
 其他的则全部初始化为0即可。
 
+>实际代码
+```cpp {.line-numbers}
+alloc_proc(void) 
+{
+    struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
+    if (proc != NULL) 
+    {
+       
+    //LAB4:EXERCISE1 YOUR CODE
+    //2211320 2211312 2211290
+        proc->state = PROC_UNINIT;         
+        proc->pid = -1;                                
+        proc->runs = 0;
+        proc->kstack = (uintptr_t)0;
+        proc->need_resched = 0;
+        proc->parent = NULL;                 
+        proc->mm = NULL;
+        memset(&(proc->context), 0, sizeof(struct context));
+        proc->tf = NULL;
+        proc->cr3 = boot_cr3;
+        proc->flags = 0; 
+        memset(&(proc->name), 0, PROC_NAME_LEN + 1);
+    }
+    return proc;
+}
+```
+
 >请在实验报告中简要说明你的设计实现过程。请回答如下问题：
 请说明proc_struct中struct context context和struct trapframe *tf成员变量含义和在本实验中的作用是啥？（提示通过看代码和编程调试可以判断出来）
 
@@ -291,7 +318,7 @@ void cpu_idle(void) {
 
 在函数`schedule()`中，实现了FIFO策略的进程调度，而为了保证进程上下文切换这一操作的原子性，则需要通过`local_intr_save(intr_flag);....local_intr_restore(intr_flag);`这一对内联函数实现中断状态的关闭、保存以及再开启，形成临界区来保证代码的正确执行。
 
-在riscV的架构下，中断的开关状态由sstatus寄存器中的SIE位（Machine Interrupt Enable中断使能位）进行控制，通过读取这一字段，可以实现中断的关闭以及恢复操作。具体如下：
+在riscV的架构下，中断的开关状态由sstatus寄存器中的SIE位（System Interrupt Enable中断使能位）进行控制，通过读取这一字段，可以实现中断的关闭以及恢复操作。具体如下：
 
 1.`local_intr_save(intr_flag);`——通过使用riscV的特权指令(可能是csrr)读取sstatus寄存器并将其保存到临时变量`intr_flag`中，便于后续的恢复操作，随后使用指令(可能是csrc)将 SIE 位清零，禁用中断。
 
