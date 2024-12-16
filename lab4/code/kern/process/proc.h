@@ -50,6 +50,7 @@ struct proc_struct {
     struct trapframe *tf;                       // Trap frame for current interrupt
     uintptr_t cr3;                              // CR3 register: the base addr of Page Directroy Table(PDT)
     uint32_t flags;                             // Process flag
+
     char name[PROC_NAME_LEN + 1];               // Process name
     list_entry_t list_link;                     // Process link list 
     list_entry_t hash_link;                     // Process hash list
