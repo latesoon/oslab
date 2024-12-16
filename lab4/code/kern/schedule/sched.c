@@ -12,7 +12,8 @@ wakeup_proc(struct proc_struct *proc)
 }
 
 void
-schedule(void) {
+schedule(void) 
+{
     bool intr_flag;
     list_entry_t *le, *last;
     struct proc_struct *next = NULL;
