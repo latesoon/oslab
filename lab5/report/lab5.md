@@ -54,12 +54,12 @@ exit 为清除当前进程几乎所有资源(PCB和内核栈不清除), 将所�
  
 ```cpp {.line-numbers}
 init_main()--> kernel_thread() -->PROC_UNINIT --wakeup_proc()--> RUNNABLE --> exit() --> PROC_ZOMBIE
-                                                                                                                |  |                                  ↑ ↑
-                                                                                                               ↓  ↓                                  | |
-                                                                                                           do_wait()                              | |
-                                                                                                                |  |                                  ↑ ↑
-                                                                                                               ↓  ↓                                  | |
-                                                                                                     PROC_SLEEPING --> exit() -->    | |
+                                                                    |  |                   ↑ ↑
+                                                                   ↓  ↓                   | |
+                                                                  do_wait()                 | |
+                                                                    |  |                   ↑ ↑
+                                                                   ↓  ↓                   | |
+                                                               PROC_SLEEPING --> exit() --> | |
 ```
 
 ### Chellenge1：实现 Copy on Write （COW）机制
