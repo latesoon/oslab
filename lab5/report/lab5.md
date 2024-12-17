@@ -33,9 +33,9 @@ proc->optr=NULL;
 ```
 current->wait_state = 0;
 proc->parent = current;
-.
-.
-.
+
+...
+
 //list_add(&proc_list, &(proc->list_link)); in set_links
 set_links(proc);
 
@@ -171,4 +171,120 @@ init_main()--> kernel_thread() -->PROC_UNINIT --wakeup_proc()--> RUNNABLE --> ex
 这个扩展练习涉及到本实验和上一个实验“虚拟内存管理”。在ucore操作系统中，当一个用户父进程创建自己的子进程时，父进程会把其申请的用户空间设置为只读，子进程可共享父进程占用的用户内存空间中的页面（这就是一个共享的资源）。当其中任何一个进程修改此用户内存空间中的某页面时，ucore会通过page fault异常获知该操作，并完成拷贝内存页面，使得两个进程都有各自的内存页面。这样一个进程所做的修改不会被另外一个进程可见了。请在ucore中实现这样的COW机制。
 由于COW实现比较复杂，容易引入bug，请参考 https://dirtycow.ninja/ 看看能否在ucore的COW实现中模拟这个错误和解决方案。需要有解释。
 
+  注：COW的实现较为复杂，且UCORE中存在较多已经设计但并未完全完成的功能。由于期末时间较为紧张，并没能完成完整的COW设计。将探索过程中的思想与实现展示如下。
+  
+
+
 ### Chellenge2：说明该用户程序是何时被预先加载到内存中的？与我们常用操作系统的加载有何区别，原因是什么？
+
+用户程序在编译的时候链接到内核中。以下是Makefile中，编译链接用户程序的指令。
+
+```cpp {.line-numbers}
+UINCLUDE	+= user/include/ \
+			   user/libs/
+
+USRCDIR		+= user
+
+ULIBDIR		+= user/libs
+
+UCFLAGS		+= $(addprefix -I,$(UINCLUDE))
+USER_BINS	:=
+
+$(call add_files_cc,$(call listf_cc,$(ULIBDIR)),ulibs,$(UCFLAGS))
+$(call add_files_cc,$(call listf_cc,$(USRCDIR)),uprog,$(UCFLAGS))
+
+UOBJS	:= $(call read_packet,ulibs libs)
+
+define uprog_ld
+__user_bin__ := $$(call ubinfile,$(1))
+USER_BINS += $$(__user_bin__)
+$$(__user_bin__): tools/user.ld
+$$(__user_bin__): $$(UOBJS)
+$$(__user_bin__): $(1) | $$$$(dir $$$$@)
+	$(V)$(LD) $(LDFLAGS) -T tools/user.ld -o $$@ $$(UOBJS) $(1)
+	@$(OBJDUMP) -S $$@ > $$(call cgtype,$$<,o,asm)
+	@$(OBJDUMP) -t $$@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$$$/d' > $$(call cgtype,$$<,o,sym)
+endef
+
+$(foreach p,$(call read_packet,uprog),$(eval $(call uprog_ld,$(p))))
+```
+
+然后再在`user_main`函数中，通过`KERNEL_EXECVE`宏调用`kernel_execve("exit", _binary_obj___user_exit_out_start,_binary_obj___user_exit_out_size)`。
+
+```cpp {.line-numbers}
+static int user_main(void *arg) {
+#ifdef TEST
+    KERNEL_EXECVE2(TEST, TESTSTART, TESTSIZE);
+#else
+    KERNEL_EXECVE(exit);
+#endif
+    panic("user_main execve failed.\n");
+}
+```
+
+在`kernel_execve`中，通过内联汇编的形式，触发中断从而调用`do_execve`函数。
+
+```cpp {.line-numbers}
+static int kernel_execve(const char *name, unsigned char *binary, size_t size) {
+    int64_t ret=0, len = strlen(name);
+    asm volatile(
+        "li a0, %1\n"
+        "lw a1, %2\n"
+        "lw a2, %3\n"
+        "lw a3, %4\n"
+        "lw a4, %5\n"
+        "li a7, 10\n"
+        "ebreak\n"
+        "sw a0, %0\n"
+        : "=m"(ret)
+        : "i"(SYS_exec), "m"(name), "m"(len), "m"(binary), "m"(size)
+        : "memory"); 
+    cprintf("ret = %d\n", ret);
+    return ret;
+}
+```
+
+`do_execve`函数实现的功能是将当前进程已经占用的内存释放，将新的程序加载到当前进程（在`load_icode`完成），以便在当前进程中执行用户程序。也就是说，程序是在`load_icode`调用中被加载到内存中的。
+
+```cpp {.line-numbers}
+int do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
+    struct mm_struct *mm = current->mm;
+    if (!user_mem_check(mm, (uintptr_t)name, len, 0)) {
+        return -E_INVAL;
+    }
+    if (len > PROC_NAME_LEN) {
+        len = PROC_NAME_LEN;
+    }
+
+    char local_name[PROC_NAME_LEN + 1];
+    memset(local_name, 0, sizeof(local_name));
+    memcpy(local_name, name, len);
+
+    if (mm != NULL) {
+        cputs("mm != NULL");
+        lcr3(boot_cr3);
+        if (mm_count_dec(mm) == 0) {
+            exit_mmap(mm);
+            put_pgdir(mm);
+            mm_destroy(mm);
+        }
+        current->mm = NULL;
+    }
+    int ret;
+    if ((ret = load_icode(binary, size)) != 0) {
+        goto execve_exit;
+    }
+    set_proc_name(current, local_name);
+    return 0;
+
+execve_exit:
+    do_exit(ret);
+    panic("already exit: %e.\n", ret);
+}
+```
+
+在常用操作系统中，用户程序一般是一个在内存中独立存在的程序。在程序需要被执行时，加载器负责将可执行文件（如 .exe 或 .out 文件）从硬盘或其他存储设备加载到内存中，并开始程序的执行。
+
+此外，由于有些用户程序过大，操作系统可能不必将整个程序加载到内存中，同时可以通过动态内存换入换出提升性能。
+
+产生区别的原因是我们用来测试的文件大小很小，没有必要再进行动态换入换出。此外，ucore没有实现文件系统，这样做的实现较为简单。
