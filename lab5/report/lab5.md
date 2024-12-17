@@ -171,9 +171,158 @@ init_main()--> kernel_thread() -->PROC_UNINIT --wakeup_proc()--> RUNNABLE --> ex
 这个扩展练习涉及到本实验和上一个实验“虚拟内存管理”。在ucore操作系统中，当一个用户父进程创建自己的子进程时，父进程会把其申请的用户空间设置为只读，子进程可共享父进程占用的用户内存空间中的页面（这就是一个共享的资源）。当其中任何一个进程修改此用户内存空间中的某页面时，ucore会通过page fault异常获知该操作，并完成拷贝内存页面，使得两个进程都有各自的内存页面。这样一个进程所做的修改不会被另外一个进程可见了。请在ucore中实现这样的COW机制。
 由于COW实现比较复杂，容易引入bug，请参考 https://dirtycow.ninja/ 看看能否在ucore的COW实现中模拟这个错误和解决方案。需要有解释。
 
-  注：COW的实现较为复杂，且UCORE中存在较多已经设计但并未完全完成的功能。由于期末时间较为紧张，并没能完成完整的COW设计。将探索过程中的思想与实现展示如下。
+  注：COW的实现较为复杂，且UCORE中存在较多已经设计但并未完全完成的功能。在本次实验中，并没能完成完整的COW设计。将探索过程中的思想与实现展示如下。
   
+COW机制的核心主要分为两个部分：
 
+1. 在父进程向子进程共享同一页面时，不再拷贝内存，而是直接把两个指针指向同一片内存。
+
+2. 当任一进程想要写入共享的内存时，为他分配一个新页，然后进行拷贝。
+
+而原本在 Exercise 2 中的做法则是直接进行拷贝，这样是非常稳妥的，但是却不利于空间的节省。
+
+#### 共享内存
+
+首先需要修改的就是`copy_range`函数，这一部分的实现应该没有什么问题。
+
+由于在 Exercise 2 中已经进行了较为详细的分析，这里主要对修改部分进行说明。
+
+```cpp {.line-numbers}
+int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
+               bool share) {
+            
+            ...
+
+            int ret = 0;
+            bool use_cow = 1;
+
+            if(use_cow){
+                perm |= PTE_USER_SHARE;
+                page_insert(to, page, start, perm);
+                ret = page_insert(to, page, start, perm);
+            }
+            else{
+                // alloc a page for process B
+                struct Page *npage = alloc_page();
+                assert(page != NULL);
+                assert(npage != NULL);
+
+                //EX2 begin
+                void *src_kvaddr = page2kva(page);
+                void *dst_kvaddr = page2kva(npage);
+                memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+                ret = page_insert(to, npage, start, perm);
+            }
+            assert(ret == 0);
+        }
+        start += PGSIZE;
+    } while (start != 0 && start < end);
+    return 0;
+}
+```
+
+在设计中，我定义了`use_cow`标记，是用来切换是否开启COW的，若不开启的时候我保留了
+
+对于使用COW的实现：
+
+1. 为perm设置标记位，`PTE_USER_SHARE`是我重新设计的标记位，与`PTE_USER`的区别是多了`SHARE`位，但是少了`W`位。用于标记这个页面是共享的，且是不可以写入的。
+   
+为此，我修改了标记位的对应关系，增加了SHARE位，由于标记位数量有限，我将之前保留给软件的SOFT位从0x300（两位）改为0x100（一位）。
+
+```cpp {.line-numbers}
+// page table entry (PTE) fields
+
+...
+
+#define PTE_SOFT  0x100 // Reserved for Software
+#define PTE_SHARE 0x200 // Share new!!
+
+#define PAGE_TABLE_DIR (PTE_V)
+#define READ_ONLY (PTE_R | PTE_V)
+#define READ_WRITE (PTE_R | PTE_W | PTE_V)
+#define EXEC_ONLY (PTE_X | PTE_V)
+#define READ_EXEC (PTE_R | PTE_X | PTE_V)
+#define READ_WRITE_EXEC (PTE_R | PTE_W | PTE_X | PTE_V)
+
+#define PTE_USER (PTE_R | PTE_W | PTE_X | PTE_U | PTE_V)
+
+//new!!
+#define PTE_USER_SHARE (PTE_R | PTE_X | PTE_U | PTE_V | PTE_SHARE)
+```
+2. 通过`page_insert`函数为两个线程中的page创建页表项。
+
+为什么可以这么做？
+
+在 Exercise 2 中可以发现，即使对相同页面（或者不同页面）进行重复映射，在函数执行过程中仍然可以通过删除之前的映射，并更新计数器，以保证这样的调用并不存在问题。
+
+当然，在这一步操作中有一个令人疑惑的地方，就是`pte_create`本质上是一个移位拼接晕死案，在`page_insert`却没有对返回值进行保存或者进一步调用。考虑这可能是一个尚未完全实现的功能。
+
+```cpp {.line-numbers}
+static inline pte_t pte_create(uintptr_t ppn, int type) {
+  return (ppn << PTE_PPN_SHIFT) | PTE_V | type;
+}
+```
+
+#### 写入时分配
+
+这里的设计是想要在程序想要写入一个不可写的页面时，让他去触发一个中断，从而在中断中完成分配操作。
+
+因此，我们需要修改`do_pgfault`缺页异常的逻辑。
+
+以下是设计的代码：
+
+```cpp {.line-numbers}
+int do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
+    ...
+    if (*ptep == 0) { 
+        ...//原有分支，物理页面不存在的分配
+    } 
+    else if((error_code & 1) && (error_code & 2) && (*ptep & PTE_SHARE) && (*ptep &PTE_V)){
+        struct Page *npage = alloc_page();
+        void *src_kvaddr = page2kva(pte2page(*ptep));
+        void *dst_kvaddr = page2kva(npage);
+        (*ptep)=((*ptep) & (~PTE_SHARE))|PTE_W;
+        memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+        page_ref_inc(pte2page(*ptep));
+        pte_create(page2ppn(pte2page(*ptep)), PTE_V | perm);
+    }
+    else {
+        ...//同lab3 ex3 正常的换页逻辑
+    }
+    ret = 0;
+failed:
+    return ret;
+}
+```
+
+设计并不难理解，主要想法其实还是像 Exercise 2 一样，分配一个新页，并且进行拷贝和建立映射关系。
+
+对于判定的设定问题：判定是error_code的后两位是1，且这个页面是共享的和有效的。
+
+```cpp {.line-numbers}
+ *         -- The P flag   (bit 0) indicates whether the exception was due to a not-present page (0)
+ *            or to either an access rights violation or the use of a reserved bit (1).
+ *         -- The W/R flag (bit 1) indicates whether the memory access that caused the exception
+ *            was a read (0) or write (1).
+ *         -- The U/S flag (bit 2) indicates whether the processor was executing at user mode (1)
+ *            or supervisor mode (0) at the time of the exception.
+```
+
+以上是ucore在`do_pgfault`对error_code的说明。
+
+第一位为1说明了异常是由一个存在的页触发的。
+
+第二位为1说明异常是由写入触发的。
+
+同时：页面是共享的，有效的。
+
+其实这样看来，已经可以比较好的捕获我们想要捕获的目标异常。
+
+对于标记位的设定：重新分配的复制而来的页面，将是不共享的，且可写的，这也是我在函数中设计的理念。
+
+#### 总结
+
+这样的设计没能通过验证，说明其中仍然存在一些问题。这些问题可能由于ucore中一些设计但未能实现，需要我去补充的模块导致，也可能是我在编写过程中留下了一些错误。考虑到期末时间较为紧张，无法在进行进一步探索。
 
 ### Chellenge2：说明该用户程序是何时被预先加载到内存中的？与我们常用操作系统的加载有何区别，原因是什么？
 
